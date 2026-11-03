@@ -86,6 +86,8 @@ docker run -p 8000:8000 --env-file .env piou-ai
 | Setting | Default | Meaning |
 |---|---|---|
 | `PIOU_ACCESS_CODE` | empty | Shared invite code. Empty = no login. |
+| `PIOU_GUEST_CODE` | empty | Optional temporary code for guests. |
+| `PIOU_GUEST_UNTIL` | empty | When the guest code expires (ISO 8601 UTC, or Unix time). |
 | `PIOU_RATE_PER_MINUTE` | 20 | Requests per IP per minute |
 | `PIOU_RATE_PER_DAY` | 150 | Requests per IP per day |
 | `PIOU_GLOBAL_PER_DAY` | 500 | Total requests per day across everyone |

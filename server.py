@@ -27,7 +27,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -65,6 +65,31 @@ def _env_int(name: str, default: int) -> int:
 
 
 ACCESS_CODE = os.environ.get("PIOU_ACCESS_CODE", "").strip()
+
+# Optional temporary guest code, valid until an absolute UTC timestamp.
+# PIOU_GUEST_UNTIL accepts ISO 8601 (e.g. 2026-11-03T16:00:00Z) or a Unix time.
+GUEST_CODE = os.environ.get("PIOU_GUEST_CODE", "").strip()
+GUEST_UNTIL_RAW = os.environ.get("PIOU_GUEST_UNTIL", "").strip()
+
+
+def _parse_timestamp(raw: str) -> float:
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+GUEST_UNTIL = _parse_timestamp(GUEST_UNTIL_RAW)
+
 RATE_PER_MINUTE = _env_int("PIOU_RATE_PER_MINUTE", 20)
 RATE_PER_DAY = _env_int("PIOU_RATE_PER_DAY", 150)
 GLOBAL_PER_DAY = _env_int("PIOU_GLOBAL_PER_DAY", 500)
@@ -269,7 +294,14 @@ def _rate_limit(
 
 def _is_authorized() -> bool:
     """Open locally when no access code is configured."""
-    return not ACCESS_CODE or session.get("authorized") is True
+    if not ACCESS_CODE:
+        return True
+    if session.get("authorized") is True:
+        return True
+    guest_until = session.get("guest_until")
+    if isinstance(guest_until, (int, float)) and time.time() < float(guest_until):
+        return True
+    return False
 
 
 def _clean_history(raw) -> list[dict]:
@@ -498,10 +530,16 @@ def health():
 
 @app.route("/api/session", methods=["GET"])
 def session_status():
+    guest_until = session.get("guest_until")
+    guest_active = isinstance(guest_until, (int, float)) and time.time() < float(
+        guest_until
+    )
     return jsonify(
         {
             "required": bool(ACCESS_CODE),
             "authenticated": _is_authorized(),
+            "guest": guest_active,
+            "guest_expires_at": int(guest_until) if guest_active else None,
         }
     )
 
@@ -534,10 +572,28 @@ def login():
     if not isinstance(code, str) or not code.strip():
         return _error("Enter the access code.", 400)
 
-    if hmac.compare_digest(code.strip(), ACCESS_CODE):
+    code = code.strip()
+
+    if hmac.compare_digest(code, ACCESS_CODE):
         session.permanent = True
         session["authorized"] = True
-        return jsonify({"ok": True, "required": True})
+        session.pop("guest_until", None)
+        return jsonify({"ok": True, "required": True, "role": "owner"})
+
+    if GUEST_CODE and hmac.compare_digest(code, GUEST_CODE):
+        if GUEST_UNTIL and time.time() < GUEST_UNTIL:
+            session.permanent = True
+            session["authorized"] = True
+            session["guest_until"] = GUEST_UNTIL
+            return jsonify(
+                {
+                    "ok": True,
+                    "required": True,
+                    "role": "guest",
+                    "expires_at": int(GUEST_UNTIL),
+                }
+            )
+        return _error("That guest code has expired.", 401)
 
     return _error("Wrong access code.", 401)
 
