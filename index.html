@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PIOU AI</title>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #0d1320;
+    --border: #23304a;
+    --text: #dbe4f3;
+    --muted: #8b9ab5;
+    --accent: #5aa9ff;
+    --accent-2: #8b7bff;
+    --user: #1d3b63;
+    --ai: #162033;
+    --danger: #ff7b8a;
+    --ok: #4ade80;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(90, 169, 255, 0.16), transparent 60%),
+      radial-gradient(700px 500px at 95% 0%, rgba(139, 123, 255, 0.14), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  header {
+    width: 100%;
+    max-width: 880px;
+    text-align: center;
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    letter-spacing: -0.02em;
+    background: linear-gradient(100deg, #eaf2ff 10%, var(--accent) 55%, var(--accent-2) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .subtitle {
+    margin-top: 10px;
+    font-weight: 800;
+    font-size: 0.95rem;
+    letter-spacing: 0.14em;
+    color: #ff8fa3;
+    text-transform: uppercase;
+  }
+
+  #chat-shell {
+    width: 100%;
+    max-width: 880px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: linear-gradient(180deg, rgba(23, 31, 48, 0.92), rgba(13, 19, 32, 0.96));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+  }
+
+  #chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(9, 13, 22, 0.55);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+    font-size: 0.72rem;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 10px rgba(74, 222, 128, 0.7);
+  }
+
+  .ghost-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .ghost-btn:hover { color: var(--text); border-color: #3a4c70; }
+
+  #chat-box {
+    flex: 1;
+    min-height: 320px;
+    max-height: calc(100vh - 330px);
+    overflow-y: auto;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
+  }
+
+  #chat-box::-webkit-scrollbar { width: 10px; }
+  #chat-box::-webkit-scrollbar-track { background: transparent; }
+  #chat-box::-webkit-scrollbar-thumb {
+    background: #26334d;
+    border-radius: 99px;
+    border: 3px solid var(--panel-2);
+  }
+
+  .message {
+    max-width: 86%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.55;
+    font-size: 0.92rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border: 1px solid transparent;
+    animation: rise 0.18s ease-out;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .user-message {
+    align-self: flex-end;
+    background: var(--user);
+    border-color: #2a5185;
+    border-bottom-right-radius: 4px;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 0.86rem;
+  }
+
+  .ai-message {
+    align-self: flex-start;
+    background: var(--ai);
+    border-color: #243149;
+    border-bottom-left-radius: 4px;
+  }
+
+  .error-message {
+    align-self: flex-start;
+    background: rgba(255, 123, 138, 0.08);
+    border-color: rgba(255, 123, 138, 0.45);
+    color: var(--danger);
+  }
+
+  .message code {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 0.85em;
+    background: rgba(90, 169, 255, 0.12);
+    color: #b9d7ff;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .message pre {
+    margin: 10px 0;
+    padding: 12px 14px;
+    background: #0a101c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .message pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    color: #cfe3ff;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .message strong { color: #eaf2ff; }
+
+  .message h4 {
+    margin: 12px 0 6px;
+    font-size: 0.95rem;
+    color: #eaf2ff;
+  }
+
+  .sender {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+
+  .typing {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  .typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.35;
+    animation: blink 1.2s infinite ease-in-out;
+  }
+
+  .typing span:nth-child(2) { animation-delay: 0.18s; }
+  .typing span:nth-child(3) { animation-delay: 0.36s; }
+
+  .retry-note {
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+    40% { opacity: 1; transform: translateY(-2px); }
+  }
+
+  #composer {
+    border-top: 1px solid var(--border);
+    background: rgba(9, 13, 22, 0.6);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #composer.dragging {
+    outline: 2px dashed var(--accent);
+    outline-offset: -6px;
+    background: rgba(90, 169, 255, 0.08);
+  }
+
+  #composer-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  #attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  #attachments[hidden] { display: none; }
+
+  .attachment {
+    position: relative;
+    width: 58px;
+    height: 58px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+
+  .attachment img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .remove-attachment {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(8, 12, 20, 0.85);
+    color: #fff;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .remove-attachment:hover { background: var(--danger); color: #14060a; }
+
+  .attach-count {
+    align-self: center;
+    margin-left: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .icon-btn {
+    width: 52px;
+    height: 52px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .icon-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  .msg-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .msg-images img {
+    max-width: 220px;
+    max-height: 220px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+
+  textarea {
+    flex: 1;
+    min-height: 52px;
+    max-height: 180px;
+    resize: none;
+    padding: 13px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  textarea::placeholder { color: #5f6f8c; }
+
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(90, 169, 255, 0.14);
+  }
+
+  #send-btn {
+    height: 52px;
+    padding: 0 24px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #07101d;
+    font-size: 0.9rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.12s, filter 0.15s, opacity 0.15s;
+  }
+
+  #send-btn:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+  #send-btn:active:not(:disabled) { transform: translateY(0); }
+  #send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .hint {
+    max-width: 880px;
+    width: 100%;
+    margin-top: 10px;
+    font-size: 0.72rem;
+    color: #62718d;
+    text-align: center;
+  }
+
+  #login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(4, 7, 13, 0.88);
+    backdrop-filter: blur(6px);
+  }
+
+  #login-overlay[hidden] { display: none; }
+
+  .login-card {
+    width: min(380px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 26px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  }
+
+  .login-card h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    letter-spacing: 0.1em;
+  }
+
+  .login-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .login-card input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font: inherit;
+    outline: none;
+  }
+
+  .login-card input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(80, 200, 255, 0.18);
+  }
+
+  .login-card button {
+    padding: 12px 16px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #061018;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .login-card button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .login-error {
+    color: #ff8b8b;
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 560px) {
+    body { padding: 18px 10px; }
+    #chat-box { padding: 16px; max-height: calc(100vh - 300px); }
+    .message { max-width: 94%; }
+    #composer { padding: 10px; gap: 8px; }
+    #send-btn { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PIOU AI</h1>
+  <div class="subtitle">PIOU NIKOLAKIS AND GKESIOS ARE GOATED</div>
+</header>
+
+<main id="chat-shell">
+  <div id="chat-header">
+    <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
+    <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
+  </div>
+
+  <div id="chat-box" aria-live="polite" aria-label="Conversation"></div>
+
+  <form id="composer" autocomplete="off">
+    <div id="attachments" hidden></div>
+    <div id="composer-row">
+      <button
+        id="attach-btn"
+        class="icon-btn"
+        type="button"
+        title="Attach images (max 9)"
+        aria-label="Attach images"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.4 11.1 12.3 20.2a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 1 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9" />
+        </svg>
+      </button>
+      <textarea
+        id="prompt-input"
+        rows="1"
+        placeholder="Ask anything, or attach an image..."
+        aria-label="Your message"
+      ></textarea>
+      <button id="send-btn" type="submit">Send</button>
+    </div>
+  </form>
+
+  <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+</main>
+
+<div class="hint">Enter to send &middot; Shift+Enter for a new line &middot; up to 9 images</div>
+
+<div id="login-overlay" hidden>
+  <form class="login-card" id="login-form">
+    <h2>PIOU AI</h2>
+    <p>This PIOU AI is private. Enter the access code to continue.</p>
+    <input
+      id="access-code"
+      type="password"
+      placeholder="Access code"
+      autocomplete="current-password"
+      required
+    />
+    <button id="login-submit" type="submit">Enter</button>
+    <p class="login-error" id="login-error" hidden></p>
+  </form>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const API_URL = "/api/chat";
+  const chatBox = document.getElementById("chat-box");
+  const form = document.getElementById("composer");
+  const input = document.getElementById("prompt-input");
+  const sendBtn = document.getElementById("send-btn");
+  const clearBtn = document.getElementById("clear-btn");
+  const attachBtn = document.getElementById("attach-btn");
+  const fileInput = document.getElementById("file-input");
+  const attachments = document.getElementById("attachments");
+  const loginOverlay = document.getElementById("login-overlay");
+  const loginForm = document.getElementById("login-form");
+  const accessInput = document.getElementById("access-code");
+  const loginError = document.getElementById("login-error");
+  const loginSubmit = document.getElementById("login-submit");
+
+  const GREETING =
+    "Hi! I'm PIOU AI — ask me anything in English or Greek, " +
+    "or attach up to nine images and I'll read, describe, or analyse them.";
+
+  const MAX_IMAGES = 9;
+  const MAX_FILE_BYTES = 12 * 1024 * 1024;
+  const MAX_IMAGE_SIDE = 1600;
+  const MAX_TOTAL_DATA_URL = 15 * 1024 * 1024;
+
+  const history = [];
+  let selectedImages = [];
+  let busy = false;
+
+  function escapeHtml(value) {
+    return value.replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[ch]);
+  }
+
+  function renderMarkdown(source) {
+    const codeBlocks = [];
+    const tokenized = source.replace(/\r\n?/g, "\n").replace(
+      /```([^\n`]*)\n?([\s\S]*?)```/g,
+      (_, lang, code) => {
+        codeBlocks.push({ lang: lang.trim(), code: code.replace(/\s+$/, "") });
+        return "\u0000CODE" + (codeBlocks.length - 1) + "\u0000";
+      }
+    );
+
+    let html = escapeHtml(tokenized);
+    html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/^#{1,4}\s+(.+)$/gm, "<h4>$1</h4>");
+    html = html.replace(/\n/g, "<br>");
+    html = html.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => {
+      const block = codeBlocks[Number(index)];
+      const safeLang = escapeHtml(block.lang.replace(/[^a-zA-Z0-9+#-]/g, ""));
+      const langAttr = safeLang ? ` class="language-${safeLang}"` : "";
+      return `<pre><code${langAttr}>${escapeHtml(block.code)}</code></pre>`;
+    });
+
+    return html;
+  }
+
+  function addMessage(text, role, extraClass = "", images = []) {
+    const div = document.createElement("div");
+    div.className = "message " + role + (extraClass ? " " + extraClass : "");
+
+    const label = document.createElement("span");
+    label.className = "sender";
+    label.textContent = role === "user-message" ? "You" : "PIOU AI";
+
+    const body = document.createElement("div");
+
+    if (role === "ai-message") {
+      body.innerHTML = renderMarkdown(text);
+    } else {
+      if (images.length) {
+        const gallery = document.createElement("div");
+        gallery.className = "msg-images";
+        for (const source of images) {
+          const image = document.createElement("img");
+          image.src = source;
+          image.alt = "Attached image";
+          image.loading = "lazy";
+          gallery.appendChild(image);
+        }
+        body.appendChild(gallery);
+      }
+      if (text) {
+        const textNode = document.createElement("div");
+        textNode.textContent = text;
+        body.appendChild(textNode);
+      }
+    }
+
+    div.append(label, body);
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return div;
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImage(source) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not decode that image."));
+      image.src = source;
+    });
+  }
+
+  async function prepareImage(file) {
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
+      throw new Error(file.name + ": unsupported image type.");
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      throw new Error(file.name + ": image is too large (max 12 MB).");
+    }
+
+    const original = await readAsDataUrl(file);
+    const image = await loadImage(original);
+    const longest = Math.max(image.width, image.height);
+
+    // Keep small images untouched; compress everything else to stay light.
+    if (longest <= MAX_IMAGE_SIDE && file.size <= 900 * 1024) {
+      return { dataUrl: original, name: file.name };
+    }
+
+    const scale = Math.min(1, MAX_IMAGE_SIDE / longest);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.88), name: file.name };
+  }
+
+  async function addFiles(files) {
+    if (busy) return;
+
+    const list = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    for (const file of list) {
+      if (selectedImages.length >= MAX_IMAGES) {
+        addMessage(
+          "You can attach at most " + MAX_IMAGES + " images per message.",
+          "ai-message",
+          "error-message"
+        );
+        break;
+      }
+      try {
+        const prepared = await prepareImage(file);
+        const totalLength = selectedImages.reduce(
+          (sum, item) => sum + item.dataUrl.length,
+          0
+        );
+        if (totalLength + prepared.dataUrl.length > MAX_TOTAL_DATA_URL) {
+          addMessage(
+            "Those images are too large together. Try fewer or smaller images.",
+            "ai-message",
+            "error-message"
+          );
+          break;
+        }
+        selectedImages.push(prepared);
+      } catch (err) {
+        addMessage(
+          (err && err.message) || String(err),
+          "ai-message",
+          "error-message"
+        );
+      }
+    }
+    renderAttachments();
+    if (selectedImages.length) input.focus();
+  }
+
+  function renderAttachments() {
+    attachments.replaceChildren();
+    attachments.hidden = selectedImages.length === 0;
+
+    selectedImages.forEach((item, index) => {
+      const tile = document.createElement("div");
+      tile.className = "attachment";
+
+      const image = document.createElement("img");
+      image.src = item.dataUrl;
+      image.alt = item.name || "Attached image";
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "remove-attachment";
+      remove.textContent = "×";
+      remove.title = "Remove image";
+      remove.setAttribute("aria-label", "Remove image");
+      remove.addEventListener("click", () => {
+        selectedImages.splice(index, 1);
+        renderAttachments();
+        input.focus();
+      });
+
+      tile.append(image, remove);
+      attachments.appendChild(tile);
+    });
+
+    if (selectedImages.length) {
+      const count = document.createElement("span");
+      count.className = "attach-count";
+      count.textContent = selectedImages.length + " / " + MAX_IMAGES;
+      attachments.appendChild(count);
+    }
+  }
+
+  function addTyping() {
+    const div = document.createElement("div");
+    div.className = "message ai-message";
+    div.innerHTML =
+      '<span class="sender">PIOU AI</span>' +
+      '<span class="typing" aria-label="Thinking"><span></span><span></span><span></span></span>';
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return div;
+  }
+
+  function autoGrow() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 180) + "px";
+  }
+
+  function setBusy(state) {
+    busy = state;
+    sendBtn.disabled = state;
+    attachBtn.disabled = state;
+    sendBtn.textContent = state ? "Thinking..." : "Send";
+  }
+
+  function showLogin(message = "") {
+    loginOverlay.hidden = false;
+    if (message) {
+      loginError.textContent = message;
+      loginError.hidden = false;
+    }
+    accessInput.focus();
+  }
+
+  async function checkSession() {
+    try {
+      const res = await fetch("/api/session");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.required && !data.authenticated) showLogin();
+    } catch (_) {
+      /* The chat request will show a connection error if the server is down. */
+    }
+  }
+
+  function buildHistoryPayload(hasNewImages, wantsImages) {
+    const turns = history.slice(-20).map(({ role, content, images }) => {
+      const turn = { role, content };
+      if (images && images.length) turn.images = images;
+      return turn;
+    });
+
+    if (hasNewImages) {
+      for (const turn of turns) delete turn.images;
+      return turns;
+    }
+
+    // Only resend old images when the new question is about them; each image
+    // costs a lot of tokens and burns through the per-minute limit.
+    if (!wantsImages) {
+      for (const turn of turns) delete turn.images;
+      return turns;
+    }
+
+    // Keep only the newest image turn, so follow-ups can still see it.
+    let keptImageTurn = false;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user" && turns[i].images && turns[i].images.length) {
+        if (keptImageTurn) {
+          delete turns[i].images;
+        } else {
+          keptImageTurn = true;
+        }
+      }
+    }
+    return turns;
+  }
+
+  function promptNeedsImage(text) {
+    const english =
+      /\b(image|images|picture|pictures|photo|photos|screenshot|screenshots|colour|color|colors|background|text|shown|see|look|compare|left|right|top|bottom|logo|face|person|object|chart|graph|drawing|grid)\b/i;
+    const greek =
+      /(εικόνα|εικόνες|φωτογραφία|φωτογραφίες|χρώμα|χρώματα|φόντο|κείμενο|σύγκρινε|δες|βλέπεις|πάνω|κάτω|αριστερά|δεξιά|σχήμα|γράφημα)/i;
+    return english.test(text) || greek.test(text);
+  }
+
+  function waitWithCountdown(seconds, onTick) {
+    return new Promise((resolve) => {
+      let left = Math.max(1, Math.ceil(seconds));
+      onTick(left);
+      const timer = setInterval(() => {
+        left -= 1;
+        if (left <= 0) {
+          clearInterval(timer);
+          resolve();
+        } else {
+          onTick(left);
+        }
+      }, 1000);
+    });
+  }
+
+  function showRetryStatus(typing, seconds) {
+    let note = typing.querySelector(".retry-note");
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "retry-note";
+      typing.appendChild(note);
+    }
+    note.textContent =
+      "AI is busy — retrying automatically in " + seconds + "s (no action needed)";
+  }
+
+  async function sendMessage() {
+    const prompt = input.value.trim();
+    if ((!prompt && selectedImages.length === 0) || busy) return;
+
+    const outgoing = selectedImages.slice();
+    const originals = outgoing.map((item) => item.dataUrl);
+
+    addMessage(prompt, "user-message", "", originals);
+    input.value = "";
+    autoGrow();
+    selectedImages = [];
+    renderAttachments();
+    setBusy(true);
+
+    const typing = addTyping();
+
+    // Gemini accepts every image (up to 9) in one native multimodal request.
+    // If Groq has to take over as fallback, the backend batches the images.
+    const apiImages = originals;
+    const apiPrompt = prompt;
+
+    try {
+      let res = null;
+      let data = null;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: apiPrompt,
+            history: buildHistoryPayload(
+              apiImages.length > 0,
+              promptNeedsImage(prompt)
+            ),
+            images: apiImages
+          })
+        });
+
+        try {
+          data = await res.json();
+        } catch (_) {
+          data = null;
+        }
+
+        if (
+          res.status === 429 &&
+          attempt < 2 &&
+          !(data && data.limit === "day")
+        ) {
+          const seconds = Math.min(
+            60,
+            Math.max(1, Number(data && data.retry_after) || 15)
+          );
+          await waitWithCountdown(seconds, (left) =>
+            showRetryStatus(typing, left)
+          );
+          continue;
+        }
+        break;
+      }
+
+      typing.remove();
+
+      if (res.ok && data && typeof data.response === "string") {
+        addMessage(data.response, "ai-message");
+        const userTurn = { role: "user", content: prompt || "[Image attached]" };
+        if (apiImages.length) userTurn.images = apiImages;
+        history.push(userTurn, { role: "assistant", content: data.response });
+        if (history.length > 20) history.splice(0, history.length - 20);
+      } else if (res.status === 401 && data && data.login_required) {
+        selectedImages = outgoing;
+        renderAttachments();
+        showLogin("Your session expired. Enter the access code again.");
+      } else if (res.status === 429) {
+        selectedImages = outgoing;
+        renderAttachments();
+        if (data && data.limit === "day") {
+          addMessage(
+            "PIOU AI has reached today's usage limit. Try again tomorrow.",
+            "ai-message",
+            "error-message"
+          );
+        } else {
+          addMessage(
+            "The AI is still cooling down. Your message is ready — press Send again in a few seconds.",
+            "ai-message",
+            "error-message"
+          );
+        }
+      } else {
+        selectedImages = outgoing;
+        renderAttachments();
+        const detail = (data && data.error) || ("HTTP " + res.status + " " + res.statusText);
+        addMessage("Request failed: " + detail, "ai-message", "error-message");
+      }
+    } catch (err) {
+      typing.remove();
+      selectedImages = outgoing;
+      renderAttachments();
+      addMessage(
+        "Could not reach the PIOU AI server. Check that it is running and try again.",
+        "ai-message",
+        "error-message"
+      );
+    } finally {
+      setBusy(false);
+      input.focus();
+    }
+  }
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const code = accessInput.value.trim();
+    if (!code) return;
+
+    loginSubmit.disabled = true;
+    loginError.hidden = true;
+
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = null;
+      }
+
+      if (res.ok) {
+        loginOverlay.hidden = true;
+        accessInput.value = "";
+        input.focus();
+      } else {
+        showLogin((data && data.error) || "Wrong access code.");
+      }
+    } catch (_) {
+      showLogin("Could not reach the PIOU AI server.");
+    } finally {
+      loginSubmit.disabled = false;
+    }
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendMessage();
+  });
+
+  input.addEventListener("input", autoGrow);
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+
+  attachBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) addFiles(fileInput.files);
+    fileInput.value = "";
+  });
+
+  input.addEventListener("paste", (event) => {
+    const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
+    if (files.some((file) => file.type.startsWith("image/"))) {
+      event.preventDefault();
+      addFiles(files);
+    }
+  });
+
+  ["dragenter", "dragover"].forEach((name) => {
+    form.addEventListener(name, (event) => {
+      event.preventDefault();
+      form.classList.add("dragging");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((name) => {
+    form.addEventListener(name, (event) => {
+      event.preventDefault();
+      form.classList.remove("dragging");
+    });
+  });
+
+  form.addEventListener("drop", (event) => {
+    const files = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
+    if (files.length) addFiles(files);
+  });
+
+  clearBtn.addEventListener("click", () => {
+    chatBox.replaceChildren();
+    history.length = 0;
+    selectedImages = [];
+    renderAttachments();
+    addMessage(GREETING, "ai-message");
+    input.focus();
+  });
+
+  // Greeting
+  addMessage(GREETING, "ai-message");
+  checkSession();
+  input.focus();
+})();
+</script>
+
+</body>
+</html>

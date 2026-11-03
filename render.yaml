@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: piou-ai
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --listen=0.0.0.0:$PORT server:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PIOU_ACCESS_CODE
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PIOU_BEHIND_PROXY
+        value: "1"
+      - key: PIOU_COOKIE_SECURE
+        value: "1"
+      - key: PIOU_RATE_PER_MINUTE
+        value: "20"
+      - key: PIOU_RATE_PER_DAY
+        value: "150"
+      - key: PIOU_GLOBAL_PER_DAY
+        value: "500"
