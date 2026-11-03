@@ -6,7 +6,8 @@
       "hash": "8e9d5b90c09756312f1077c5b285f2b024cef84bea892ebcc62b5889ea533688",
       "created_at": 1793725698.9839964,
       "expires_at": 1793729298.9839964,
-      "active": true
+      "active": false,
+      "stopped_at": 1793725713.8754258
     }
   ]
 }
