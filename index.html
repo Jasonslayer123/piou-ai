@@ -549,7 +549,8 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
-      <button class="ghost-btn" id="admin-btn" type="button" hidden>Admin</button>
+      <!-- Admin GUI Button (Visible only for owner session) -->
+      <button class="ghost-btn" id="admin-btn" type="button" hidden style="background: linear-gradient(135deg, #ffc46b, #ff7b8a); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
     </div>
@@ -755,7 +756,6 @@
     const image = await loadImage(original);
     const longest = Math.max(image.width, image.height);
 
-    // Keep small images untouched; compress everything else to stay light.
     if (longest <= MAX_IMAGE_SIDE && file.size <= 900 * 1024) {
       return { dataUrl: original, name: file.name };
     }
@@ -878,7 +878,6 @@
   }
 
   function updateOwnerUi(role, required) {
-    // Guest-code + admin buttons are only for the owner (or open local mode).
     const owner = role === "owner" || required === false;
     codeBtn.hidden = !owner;
     adminBtn.hidden = !owner;
@@ -896,9 +895,7 @@
       const data = await res.json();
       if (data.required && !data.authenticated) showLogin();
       updateOwnerUi(data.role, data.required);
-    } catch (_) {
-      /* The chat request will show a connection error if the server is down. */
-    }
+    } catch (_) {}
   }
 
   function buildHistoryPayload(hasNewImages, wantsImages) {
@@ -913,14 +910,11 @@
       return turns;
     }
 
-    // Only resend old images when the new question is about them; each image
-    // costs a lot of tokens and burns through the per-minute limit.
     if (!wantsImages) {
       for (const turn of turns) delete turn.images;
       return turns;
     }
 
-    // Keep only the newest image turn, so follow-ups can still see it.
     let keptImageTurn = false;
     for (let i = turns.length - 1; i >= 0; i--) {
       if (turns[i].role === "user" && turns[i].images && turns[i].images.length) {
@@ -984,9 +978,6 @@
     setBusy(true);
 
     const typing = addTyping();
-
-    // Gemini accepts every image (up to 9) in one native multimodal request.
-    // If Groq has to take over as fallback, the backend batches the images.
     const apiImages = originals;
     const apiPrompt = prompt;
 
@@ -1242,7 +1233,6 @@
     input.focus();
   });
 
-  // Greeting
   addMessage(GREETING, "ai-message");
   checkSession();
   input.focus();
