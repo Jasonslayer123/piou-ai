@@ -463,9 +463,6 @@ _global_hits: dict[str, list] = {}
 
 
 def _client_ip() -> str:
-    # Cloudflare Tunnel terminates the connection locally, so remote_addr is
-    # always 127.0.0.1. Prefer Cloudflare's real client IP header when present
-    # so per-IP limits stay meaningful for visitors.
     cf_ip = request.headers.get("CF-Connecting-IP", "").strip()
     if cf_ip:
         return cf_ip
@@ -490,7 +487,6 @@ def _rate_limit(
     per_day: int | None = None,
     use_global: bool = True,
 ) -> tuple[bool, int, str]:
-    """Sliding-window limiter. Returns (allowed, retry_after, limit_kind)."""
     per_minute = RATE_PER_MINUTE if per_minute is None else per_minute
     per_day = RATE_PER_DAY if per_day is None else per_day
 
@@ -533,13 +529,11 @@ def _rate_limit(
 
 
 def _is_authorized() -> bool:
-    """Open locally when no access code is configured."""
     if not ACCESS_CODE:
         return True
     if session.get("authorized") is not True:
         return False
 
-    # Keys are revocable, so a key-based session is re-checked on every request.
     key_id = session.get("key_id")
     if key_id:
         try:
@@ -561,7 +555,6 @@ def _is_owner() -> bool:
 
 
 def _clean_history(raw) -> list[dict]:
-    """Keep only the last few well-formed user/assistant turns."""
     if not isinstance(raw, list):
         return []
 
@@ -590,7 +583,6 @@ def _clean_history(raw) -> list[dict]:
 
 
 def _parse_images(raw) -> list[str]:
-    """Validate base64 image data URLs and return normalised copies."""
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -645,7 +637,6 @@ def _parse_images(raw) -> list[str]:
 
 
 def _image_content(text: str, images: list[str]):
-    """Build OpenAI-style message content for text plus optional images."""
     if not images:
         return text
 
@@ -664,6 +655,7 @@ def _complete(
     temperature: float = 0.6,
     max_tokens: int = 4096,
     reasoning_effort: str | None = None,
+    extra_body: dict | None = None,
 ) -> str:
     kwargs = {
         "model": model,
@@ -673,6 +665,8 @@ def _complete(
     }
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
+    if extra_body:
+        kwargs["extra_body"] = extra_body
 
     completion = api_client.chat.completions.create(**kwargs)
     return (completion.choices[0].message.content or "").strip()
@@ -681,7 +675,6 @@ def _complete(
 def _answer_many_images(
     prompt: str, history_messages: list[dict], images: list[str]
 ) -> str:
-    """Analyse each image separately in parallel, then synthesise an answer."""
     total = len(images)
 
     def analyse(job: tuple[int, str]) -> str:
@@ -740,7 +733,7 @@ def _ask_gemini(
     *,
     has_images: bool,
 ) -> str:
-    """One Gemini call: all images go in a single native multimodal request."""
+    """One Gemini call with Google Search grounding explicitly enabled."""
     return _complete(
         gemini_client,
         model,
@@ -751,14 +744,13 @@ def _ask_gemini(
         ],
         temperature=0.6,
         max_tokens=2048 if has_images else 4096,
-        # Flash-Lite is fastest with its default thinking level.
         reasoning_effort=None if "lite" in model else "low",
+        extra_body={"tools": [{"google_search": {}}]},
     )
 
 
 @app.route("/")
 def index():
-    """Serve the chat UI so everything runs from one origin."""
     return send_from_directory(BASE_DIR, "index.html")
 
 
@@ -907,7 +899,6 @@ def login():
 
 @app.route("/api/guest-code", methods=["POST"])
 def create_guest_code():
-    """Owner-only: mint a signed guest code that expires after N minutes."""
     if not _is_authorized():
         return (
             jsonify({"error": "Access code required.", "login_required": True}),
@@ -937,7 +928,6 @@ def logout():
 
 @app.route("/admin")
 def admin_page():
-    """Owner-only admin panel."""
     if not _is_authorized():
         return redirect("/?next=/admin")
     if not _is_owner():
@@ -978,15 +968,17 @@ def admin_create_key():
     payload = request.get_json(silent=True)
     label = ""
     minutes = 0
+    custom_code = ""
     if isinstance(payload, dict):
         label = str(payload.get("label", "")).strip()[:60]
+        custom_code = str(payload.get("code", "")).strip()
         try:
             minutes = int(payload.get("minutes", 0) or 0)
         except (TypeError, ValueError):
             minutes = 0
     minutes = max(0, min(minutes, 60 * 24 * 365))
 
-    code = new_key_code()
+    code = custom_code if custom_code else new_key_code()
     now = time.time()
     entry = {
         "id": uuid.uuid4().hex[:12],
@@ -1105,7 +1097,6 @@ def chat():
             503,
         )
 
-    # Text costs 1 unit; each image costs 2 more because vision is expensive.
     cost = 1 + 2 * total_images
     allowed, retry_after, limit_kind = _rate_limit("chat", cost=cost)
     if not allowed:
@@ -1146,7 +1137,6 @@ def chat():
     provider = None
     gemini_error = None
 
-    # Primary: Gemini. It handles all images natively in one request.
     if gemini_client:
         has_images = total_images > 0
         if has_images:
@@ -1165,7 +1155,7 @@ def chat():
                     images,
                     has_images=has_images,
                 )
-            except Exception as exc:  # timeout, quota, auth, bad request ...
+            except Exception as exc:
                 gemini_error = exc
                 app.logger.warning("Gemini model %s failed: %s", model, exc)
                 continue
@@ -1174,7 +1164,6 @@ def chat():
                 provider = f"gemini:{model}"
                 break
 
-    # Fallback: Groq, unchanged behaviour (batched when more than 3 images).
     if not answer and groq_client:
         try:
             if total_images > VISION_BATCH_SIZE:
@@ -1222,7 +1211,7 @@ def chat():
                 ),
                 429,
             )
-        except Exception as exc:  # network, auth, bad request ...
+        except Exception as exc:
             app.logger.exception("Groq request failed")
             return _error(f"AI request failed: {exc}", 502)
 
@@ -1231,7 +1220,6 @@ def chat():
             app.logger.error("All providers failed; last Gemini error: %s", gemini_error)
         return _error("The model returned an empty response.", 502)
 
-    # Guaranteed catchphrase, even if the model forgets it.
     if not answer.casefold().startswith(CATCHPHRASE.casefold()):
         answer = f"{CATCHPHRASE}\n\n{answer}"
 
