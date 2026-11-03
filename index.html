@@ -549,8 +549,8 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
-      <!-- Admin GUI Button (Visible only for owner session) -->
-      <button class="ghost-btn" id="admin-btn" type="button" hidden style="background: linear-gradient(135deg, #ffc46b, #ff7b8a); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
+      <!-- Permanent Admin GUI Button -->
+      <button class="ghost-btn" id="admin-btn" type="button" onclick="location.href='/admin'" style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
     </div>
@@ -880,7 +880,6 @@
   function updateOwnerUi(role, required) {
     const owner = role === "owner" || required === false;
     codeBtn.hidden = !owner;
-    adminBtn.hidden = !owner;
   }
 
   function nextPath() {
