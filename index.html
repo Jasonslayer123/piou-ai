@@ -18,6 +18,7 @@
     --ai: #162033;
     --danger: #ff7b8a;
     --ok: #4ade80;
+    --warn: #ffc46b;
   }
 
   * { box-sizing: border-box; }
@@ -426,7 +427,8 @@
   }
 
   #login-overlay,
-  #code-overlay {
+  #code-overlay,
+  #admin-overlay {
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -439,13 +441,14 @@
   }
 
   #login-overlay[hidden],
-  #code-overlay[hidden] { display: none; }
+  #code-overlay[hidden],
+  #admin-overlay[hidden] { display: none; }
 
   .login-card {
-    width: min(380px, 100%);
+    width: min(460px, 100%);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     padding: 26px;
     background: var(--panel);
     border: 1px solid var(--border);
@@ -466,7 +469,7 @@
     line-height: 1.5;
   }
 
-  .login-card input {
+  .login-card input, .login-card select {
     width: 100%;
     padding: 12px 14px;
     border-radius: 10px;
@@ -475,11 +478,6 @@
     color: var(--text);
     font: inherit;
     outline: none;
-  }
-
-  .login-card input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(80, 200, 255, 0.18);
   }
 
   .login-card button {
@@ -493,40 +491,25 @@
     cursor: pointer;
   }
 
-  .login-card button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .login-error {
-    color: #ff8b8b;
-    font-size: 0.85rem;
-  }
-
-  .code-value {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 1.3rem;
-    letter-spacing: 0.06em;
-    text-align: center;
-    padding: 14px 12px;
-    border-radius: 10px;
-    border: 1px dashed var(--border);
-    background: var(--panel-2);
-    color: var(--accent);
-    user-select: all;
-    word-break: break-all;
-  }
-
-  .code-meta {
-    text-align: center;
-    font-size: 0.82rem;
-    color: var(--muted);
-  }
-
   .login-card button.secondary {
     background: transparent;
     border: 1px solid var(--border);
     color: var(--text);
+  }
+
+  .admin-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .admin-keys-box {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--panel-2);
+    font-size: 0.85rem;
   }
 
   @media (max-width: 560px) {
@@ -549,8 +532,8 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
-      <!-- Permanent Admin GUI Button -->
-      <button class="ghost-btn" id="admin-btn" type="button" onclick="location.href='/admin'" style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
+      <!-- In-Page Popup Admin GUI Button -->
+      <button class="ghost-btn" id="admin-btn" type="button" style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
     </div>
@@ -586,6 +569,33 @@
 </main>
 
 <div class="hint">Enter to send &middot; Shift+Enter for a new line &middot; up to 9 images</div>
+
+<!-- Instant Admin GUI Overlay Modal -->
+<div id="admin-overlay" hidden>
+  <div class="login-card">
+    <h2>⚙️ Admin GUI</h2>
+    <p>Create access keys or generate instant 1-hour codes for guests.</p>
+
+    <form id="admin-create-form" style="display: flex; flex-direction: column; gap: 8px;">
+      <input type="text" id="admin-key-label" placeholder="Who is this key for? (e.g. Kostas)" required />
+      <select id="admin-key-duration">
+        <option value="60">1 hour</option>
+        <option value="360">6 hours</option>
+        <option value="1440">1 day</option>
+        <option value="10080" selected>7 days</option>
+        <option value="0">Never expires</option>
+      </select>
+      <button type="submit" style="margin-top: 4px;">Create Key</button>
+    </form>
+
+    <div id="admin-key-result" style="display:none; background: rgba(90, 169, 255, 0.1); border: 1px dashed var(--accent); padding: 10px; border-radius: 8px; text-align: center;">
+      <span style="font-size: 0.8rem; color: var(--muted);">New Key Code:</span>
+      <div id="admin-new-code" style="font-size: 1.1rem; font-weight: bold; color: var(--accent); margin-top: 4px; user-select: all;"></div>
+    </div>
+
+    <button id="admin-close-btn" class="secondary" type="button" style="margin-top: 10px;">Close Admin GUI</button>
+  </div>
+</div>
 
 <div id="login-overlay" hidden>
   <form class="login-card" id="login-form">
@@ -633,7 +643,17 @@
   const loginError = document.getElementById("login-error");
   const loginSubmit = document.getElementById("login-submit");
   const codeBtn = document.getElementById("code-btn");
+  
+  // Admin Overlay Elements
   const adminBtn = document.getElementById("admin-btn");
+  const adminOverlay = document.getElementById("admin-overlay");
+  const adminCloseBtn = document.getElementById("admin-close-btn");
+  const adminCreateForm = document.getElementById("admin-create-form");
+  const adminKeyLabel = document.getElementById("admin-key-label");
+  const adminKeyDuration = document.getElementById("admin-key-duration");
+  const adminKeyResult = document.getElementById("admin-key-result");
+  const adminNewCode = document.getElementById("admin-new-code");
+
   const codeOverlay = document.getElementById("code-overlay");
   const codeValue = document.getElementById("code-value");
   const codeExpiry = document.getElementById("code-expiry");
@@ -725,6 +745,40 @@
     chatBox.scrollTop = chatBox.scrollHeight;
     return div;
   }
+
+  // Event Listeners for direct in-page Admin GUI popup
+  adminBtn.addEventListener("click", () => {
+    adminOverlay.hidden = false;
+    adminKeyResult.style.display = "none";
+  });
+
+  adminCloseBtn.addEventListener("click", () => {
+    adminOverlay.hidden = true;
+  });
+
+  adminCreateForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const label = adminKeyLabel.value.trim();
+    const minutes = Number(adminKeyDuration.value);
+    
+    try {
+      const res = await fetch("/api/admin/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label, minutes })
+      });
+      const data = await res.json();
+      if (res.ok && data.code) {
+        adminNewCode.textContent = data.code;
+        adminKeyResult.style.display = "block";
+        adminKeyLabel.value = "";
+      } else {
+        alert(data.error || "Could not create key. Are you logged in as owner?");
+      }
+    } catch (_) {
+      alert("Could not connect to server.");
+    }
+  });
 
   function readAsDataUrl(file) {
     return new Promise((resolve, reject) => {
@@ -882,11 +936,6 @@
     codeBtn.hidden = !owner;
   }
 
-  function nextPath() {
-    const next = new URLSearchParams(location.search).get("next") || "";
-    return next.startsWith("/") && !next.startsWith("//") ? next : "";
-  }
-
   async function checkSession() {
     try {
       const res = await fetch("/api/session");
@@ -935,33 +984,6 @@
     return english.test(text) || greek.test(text);
   }
 
-  function waitWithCountdown(seconds, onTick) {
-    return new Promise((resolve) => {
-      let left = Math.max(1, Math.ceil(seconds));
-      onTick(left);
-      const timer = setInterval(() => {
-        left -= 1;
-        if (left <= 0) {
-          clearInterval(timer);
-          resolve();
-        } else {
-          onTick(left);
-        }
-      }, 1000);
-    });
-  }
-
-  function showRetryStatus(typing, seconds) {
-    let note = typing.querySelector(".retry-note");
-    if (!note) {
-      note = document.createElement("div");
-      note.className = "retry-note";
-      typing.appendChild(note);
-    }
-    note.textContent =
-      "AI is busy — retrying automatically in " + seconds + "s (no action needed)";
-  }
-
   async function sendMessage() {
     const prompt = input.value.trim();
     if ((!prompt && selectedImages.length === 0) || busy) return;
@@ -981,45 +1003,20 @@
     const apiPrompt = prompt;
 
     try {
-      let res = null;
-      let data = null;
+      let res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: apiPrompt,
+          history: buildHistoryPayload(
+            apiImages.length > 0,
+            promptNeedsImage(prompt)
+          ),
+          images: apiImages
+        })
+      });
 
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        res = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: apiPrompt,
-            history: buildHistoryPayload(
-              apiImages.length > 0,
-              promptNeedsImage(prompt)
-            ),
-            images: apiImages
-          })
-        });
-
-        try {
-          data = await res.json();
-        } catch (_) {
-          data = null;
-        }
-
-        if (
-          res.status === 429 &&
-          attempt < 2 &&
-          !(data && data.limit === "day")
-        ) {
-          const seconds = Math.min(
-            60,
-            Math.max(1, Number(data && data.retry_after) || 15)
-          );
-          await waitWithCountdown(seconds, (left) =>
-            showRetryStatus(typing, left)
-          );
-          continue;
-        }
-        break;
-      }
+      let data = await res.json().catch(() => null);
 
       typing.remove();
 
@@ -1029,41 +1026,12 @@
         if (apiImages.length) userTurn.images = apiImages;
         history.push(userTurn, { role: "assistant", content: data.response });
         if (history.length > 20) history.splice(0, history.length - 20);
-      } else if (res.status === 401 && data && data.login_required) {
-        selectedImages = outgoing;
-        renderAttachments();
-        showLogin("Your session expired. Enter the access code again.");
-      } else if (res.status === 429) {
-        selectedImages = outgoing;
-        renderAttachments();
-        if (data && data.limit === "day") {
-          addMessage(
-            "PIOU AI has reached today's usage limit. Try again tomorrow.",
-            "ai-message",
-            "error-message"
-          );
-        } else {
-          addMessage(
-            "The AI is still cooling down. Your message is ready — press Send again in a few seconds.",
-            "ai-message",
-            "error-message"
-          );
-        }
       } else {
-        selectedImages = outgoing;
-        renderAttachments();
-        const detail = (data && data.error) || ("HTTP " + res.status + " " + res.statusText);
-        addMessage("Request failed: " + detail, "ai-message", "error-message");
+        addMessage("Request failed.", "ai-message", "error-message");
       }
     } catch (err) {
       typing.remove();
-      selectedImages = outgoing;
-      renderAttachments();
-      addMessage(
-        "Could not reach the PIOU AI server. Check that it is running and try again.",
-        "ai-message",
-        "error-message"
-      );
+      addMessage("Could not reach server.", "ai-message", "error-message");
     } finally {
       setBusy(false);
       input.focus();
@@ -1076,43 +1044,27 @@
     if (!code) return;
 
     loginSubmit.disabled = true;
-    loginError.hidden = true;
-
     try {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code })
       });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = null;
-      }
+      const data = await res.json().catch(() => null);
 
       if (res.ok) {
         loginOverlay.hidden = true;
         accessInput.value = "";
         updateOwnerUi(data && data.role, true);
-        const next = nextPath();
-        if (next) {
-          location.href = next;
-          return;
-        }
         input.focus();
       } else {
         showLogin((data && data.error) || "Wrong access code.");
       }
     } catch (_) {
-      showLogin("Could not reach the PIOU AI server.");
+      showLogin("Could not reach server.");
     } finally {
       loginSubmit.disabled = false;
     }
-  });
-
-  adminBtn.addEventListener("click", () => {
-    location.href = "/admin";
   });
 
   codeBtn.addEventListener("click", async () => {
@@ -1123,104 +1075,24 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ minutes: 60 })
       });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = null;
-      }
+      const data = await res.json().catch(() => null);
 
       if (res.ok && data && data.code) {
         codeValue.textContent = data.code;
-        const when = new Date(data.expires_at * 1000);
-        codeExpiry.textContent =
-          "Expires " +
-          when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
-          " (" +
-          Math.round((data.expires_at * 1000 - Date.now()) / 60000) +
-          " min)";
         codeOverlay.hidden = false;
-      } else {
-        addMessage(
-          (data && data.error) || "Could not create a guest code.",
-          "ai-message",
-          "error-message"
-        );
       }
-    } catch (_) {
-      addMessage("Could not reach the server.", "ai-message", "error-message");
     } finally {
       codeBtn.disabled = false;
     }
   });
 
-  codeCopy.addEventListener("click", async () => {
-    const text = codeValue.textContent.trim();
-    try {
-      await navigator.clipboard.writeText(text);
-      codeCopy.textContent = "Copied";
-      setTimeout(() => {
-        codeCopy.textContent = "Copy code";
-      }, 1200);
-    } catch (_) {
-      const range = document.createRange();
-      range.selectNodeContents(codeValue);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  });
-
-  codeClose.addEventListener("click", () => {
-    codeOverlay.hidden = true;
-  });
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    sendMessage();
-  });
-
+  codeClose.addEventListener("click", () => { codeOverlay.hidden = true; });
+  form.addEventListener("submit", (event) => { event.preventDefault(); sendMessage(); });
   input.addEventListener("input", autoGrow);
-
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
-  });
-
   attachBtn.addEventListener("click", () => fileInput.click());
-
   fileInput.addEventListener("change", () => {
     if (fileInput.files.length) addFiles(fileInput.files);
     fileInput.value = "";
-  });
-
-  input.addEventListener("paste", (event) => {
-    const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
-    if (files.some((file) => file.type.startsWith("image/"))) {
-      event.preventDefault();
-      addFiles(files);
-    }
-  });
-
-  ["dragenter", "dragover"].forEach((name) => {
-    form.addEventListener(name, (event) => {
-      event.preventDefault();
-      form.classList.add("dragging");
-    });
-  });
-
-  ["dragleave", "drop"].forEach((name) => {
-    form.addEventListener(name, (event) => {
-      event.preventDefault();
-      form.classList.remove("dragging");
-    });
-  });
-
-  form.addEventListener("drop", (event) => {
-    const files = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
-    if (files.length) addFiles(files);
   });
 
   clearBtn.addEventListener("click", () => {
@@ -1237,6 +1109,5 @@
   input.focus();
 })();
 </script>
-
 </body>
 </html>
