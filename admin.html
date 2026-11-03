@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PIOU AI · Admin</title>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #0d1320;
+    --border: #23304a;
+    --text: #dbe4f3;
+    --muted: #8b9ab5;
+    --accent: #5aa9ff;
+    --accent-2: #8b7bff;
+    --danger: #ff7b8a;
+    --ok: #4ade80;
+    --warn: #ffc46b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 16px 64px;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(90, 169, 255, 0.16), transparent 60%),
+      radial-gradient(700px 500px at 95% 0%, rgba(139, 123, 255, 0.14), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    max-width: 880px;
+    text-align: center;
+    margin-bottom: 22px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 4vw, 2.1rem);
+    letter-spacing: 0.16em;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .subtitle {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  main {
+    width: 100%;
+    max-width: 880px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .card p.hint {
+    margin: 0 0 14px;
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .create-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  input[type="text"], select {
+    padding: 11px 13px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+  }
+
+  input[type="text"] { flex: 1 1 220px; min-width: 0; }
+  select { flex: 0 0 auto; }
+
+  input[type="text"]:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(90, 169, 255, 0.16);
+  }
+
+  button {
+    padding: 11px 18px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #06101f;
+    font-weight: 700;
+    font-size: 0.86rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.05s;
+  }
+
+  button:hover { opacity: 0.9; }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.55; cursor: default; }
+
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  button.ghost:hover { color: var(--text); border-color: #3a4c70; }
+
+  button.danger {
+    background: transparent;
+    border: 1px solid rgba(255, 123, 138, 0.4);
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  button.danger:hover { background: rgba(255, 123, 138, 0.1); }
+
+  button.small { padding: 6px 11px; font-size: 0.76rem; border-radius: 8px; }
+
+  #keys-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .key-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+  }
+
+  .key-main { flex: 1; min-width: 0; }
+
+  .key-label {
+    font-weight: 600;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .key-meta {
+    margin-top: 3px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .key-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .badge.active { color: var(--ok); background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.3); }
+  .badge.stopped { color: var(--danger); background: rgba(255, 123, 138, 0.1); border-color: rgba(255, 123, 138, 0.3); }
+  .badge.expired { color: var(--warn); background: rgba(255, 196, 107, 0.1); border-color: rgba(255, 196, 107, 0.3); }
+
+  .empty {
+    padding: 18px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+  }
+
+  .error-text {
+    margin-top: 10px;
+    color: var(--danger);
+    font-size: 0.82rem;
+  }
+
+  .footer-links {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .footer-links a { color: var(--accent); text-decoration: none; }
+  .footer-links a:hover { text-decoration: underline; }
+
+  #modal {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(4, 7, 13, 0.88);
+    backdrop-filter: blur(6px);
+  }
+
+  #modal[hidden] { display: none; }
+
+  .modal-card {
+    width: min(420px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  }
+
+  .modal-card h2 { margin: 0; font-size: 1.05rem; letter-spacing: 0.08em; }
+  .modal-card p { margin: 0; font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
+
+  .code-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.25rem;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding: 14px 12px;
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    background: var(--panel-2);
+    color: var(--accent);
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-actions button { flex: 1; }
+
+  @media (max-width: 560px) {
+    body { padding: 20px 10px 40px; }
+    .key-row { flex-wrap: wrap; }
+    .key-actions { width: 100%; justify-content: flex-end; }
+    .create-row button { flex: 1 1 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PIOU AI</h1>
+  <div class="subtitle">PIOU NIKOLAKIS AND GKESIOS ARE GOATED</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Make a key</h2>
+    <p class="hint">
+      Give it a name so you remember who has it. The key works until it expires or
+      until you press <strong>Stop</strong>.
+    </p>
+    <form class="create-row" id="create-form" autocomplete="off">
+      <input type="text" id="key-label" placeholder="Who is it for? (e.g. Kostas)" maxlength="60" />
+      <select id="key-duration">
+        <option value="60">1 hour</option>
+        <option value="360">6 hours</option>
+        <option value="1440">1 day</option>
+        <option value="10080" selected>7 days</option>
+        <option value="43200">30 days</option>
+        <option value="0">Never expires</option>
+      </select>
+      <button type="submit" id="create-btn">Create key</button>
+    </form>
+    <p class="error-text" id="create-error" hidden></p>
+  </section>
+
+  <section class="card">
+    <h2>Keys</h2>
+    <p class="hint" id="keys-hint">Loading…</p>
+    <div id="keys-list"></div>
+  </section>
+
+  <div class="footer-links">
+    <span id="storage-note"></span>
+    <span>
+      <a href="/">&larr; Back to chat</a>
+      &nbsp;·&nbsp;
+      <a href="#" id="logout-link">Log out</a>
+    </span>
+  </div>
+</main>
+
+<div id="modal" hidden>
+  <div class="modal-card">
+    <h2>New key</h2>
+    <p>Copy this now — it is shown only once and cannot be recovered.</p>
+    <div class="code-value" id="new-code">&mdash;</div>
+    <div class="modal-actions">
+      <button type="button" id="copy-btn">Copy key</button>
+      <button type="button" id="close-modal" class="ghost">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const listEl = document.getElementById("keys-list");
+  const hintEl = document.getElementById("keys-hint");
+  const storageNote = document.getElementById("storage-note");
+  const createForm = document.getElementById("create-form");
+  const labelInput = document.getElementById("key-label");
+  const durationSelect = document.getElementById("key-duration");
+  const createBtn = document.getElementById("create-btn");
+  const createError = document.getElementById("create-error");
+  const modal = document.getElementById("modal");
+  const newCode = document.getElementById("new-code");
+  const copyBtn = document.getElementById("copy-btn");
+  const closeModal = document.getElementById("close-modal");
+
+  let keys = [];
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function formatDate(ts) {
+    if (!ts) return "—";
+    return new Date(ts * 1000).toLocaleString([], {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function relative(ts) {
+    if (!ts) return "";
+    const diff = ts * 1000 - Date.now();
+    const abs = Math.abs(diff);
+    const mins = Math.round(abs / 60000);
+    let text;
+    if (mins < 60) text = mins + " min";
+    else if (mins < 1440) text = Math.round(mins / 60) + " h";
+    else text = Math.round(mins / 1440) + " d";
+    return diff > 0 ? "in " + text : text + " ago";
+  }
+
+  async function api(path, options) {
+    const res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options));
+    if (res.status === 401 || res.status === 403) {
+      location.href = "/";
+      throw new Error("Not the owner");
+    }
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = null;
+    }
+    if (!res.ok) throw new Error((data && data.error) || "Request failed");
+    return data;
+  }
+
+  function render() {
+    listEl.innerHTML = "";
+    if (!keys.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No keys yet. Create one above and share it.";
+      listEl.appendChild(empty);
+      hintEl.textContent = "0 keys";
+      return;
+    }
+
+    const active = keys.filter((k) => k.state === "active").length;
+    hintEl.textContent = keys.length + " total · " + active + " working";
+
+    keys.forEach((key) => {
+      const row = document.createElement("div");
+      row.className = "key-row";
+
+      const main = document.createElement("div");
+      main.className = "key-main";
+
+      const label = document.createElement("div");
+      label.className = "key-label";
+      label.textContent = key.label || "Guest key";
+      main.appendChild(label);
+
+      const meta = document.createElement("div");
+      meta.className = "key-meta";
+      const expires =
+        key.state === "expired"
+          ? "Expired " + formatDate(key.expires_at)
+          : key.expires_at
+            ? "Expires " + formatDate(key.expires_at) + " (" + relative(key.expires_at) + ")"
+            : "Never expires";
+      meta.innerHTML =
+        '<span class="badge ' + escapeHtml(key.state) + '">' + escapeHtml(key.state) + "</span>" +
+        "<span>" + escapeHtml(expires) + "</span>" +
+        "<span>Made " + escapeHtml(formatDate(key.created_at)) + "</span>";
+      main.appendChild(meta);
+      row.appendChild(main);
+
+      const actions = document.createElement("div");
+      actions.className = "key-actions";
+
+      if (key.state === "active") {
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "danger small";
+        stop.textContent = "Stop";
+        stop.addEventListener("click", () => stopKey(key, stop));
+        actions.appendChild(stop);
+      }
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ghost small";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => deleteKey(key, del));
+      actions.appendChild(del);
+
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
+  }
+
+  async function load() {
+    try {
+      const data = await api("/api/admin/keys");
+      keys = data.keys || [];
+      storageNote.textContent =
+        data.storage === "github" ? "Saved in GitHub" : "Saved locally";
+      render();
+    } catch (err) {
+      hintEl.textContent = "Could not load keys.";
+      createError.textContent = err.message;
+      createError.hidden = false;
+    }
+  }
+
+  async function stopKey(key, btn) {
+    if (!confirm('Stop "' + (key.label || "this key") + '"? Anyone using it is kicked out immediately.')) {
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await api("/api/admin/keys/" + encodeURIComponent(key.id) + "/revoke", { method: "POST" });
+      await load();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  }
+
+  async function deleteKey(key, btn) {
+    if (!confirm("Delete this key permanently?")) return;
+    btn.disabled = true;
+    try {
+      await api("/api/admin/keys/" + encodeURIComponent(key.id), { method: "DELETE" });
+      await load();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  }
+
+  createForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    createError.hidden = true;
+    createBtn.disabled = true;
+    try {
+      const data = await api("/api/admin/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          label: labelInput.value.trim(),
+          minutes: Number(durationSelect.value)
+        })
+      });
+      newCode.textContent = data.code;
+      copyBtn.textContent = "Copy key";
+      modal.hidden = false;
+      labelInput.value = "";
+      await load();
+    } catch (err) {
+      createError.textContent = err.message;
+      createError.hidden = false;
+    } finally {
+      createBtn.disabled = false;
+    }
+  });
+
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(newCode.textContent.trim());
+      copyBtn.textContent = "Copied";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy key";
+      }, 1200);
+    } catch (_) {
+      const range = document.createRange();
+      range.selectNodeContents(newCode);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
+  closeModal.addEventListener("click", () => {
+    modal.hidden = true;
+  });
+
+  document.getElementById("logout-link").addEventListener("click", async (event) => {
+    event.preventDefault();
+    await fetch("/api/logout", { method: "POST" });
+    location.href = "/";
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

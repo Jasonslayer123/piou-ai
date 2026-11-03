@@ -549,6 +549,7 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
+      <button class="ghost-btn" id="admin-btn" type="button" hidden>Admin</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
     </div>
@@ -631,6 +632,7 @@
   const loginError = document.getElementById("login-error");
   const loginSubmit = document.getElementById("login-submit");
   const codeBtn = document.getElementById("code-btn");
+  const adminBtn = document.getElementById("admin-btn");
   const codeOverlay = document.getElementById("code-overlay");
   const codeValue = document.getElementById("code-value");
   const codeExpiry = document.getElementById("code-expiry");
@@ -876,8 +878,15 @@
   }
 
   function updateOwnerUi(role, required) {
-    // The guest-code button is only for the owner (or open local mode).
-    codeBtn.hidden = !(role === "owner" || required === false);
+    // Guest-code + admin buttons are only for the owner (or open local mode).
+    const owner = role === "owner" || required === false;
+    codeBtn.hidden = !owner;
+    adminBtn.hidden = !owner;
+  }
+
+  function nextPath() {
+    const next = new URLSearchParams(location.search).get("next") || "";
+    return next.startsWith("/") && !next.startsWith("//") ? next : "";
   }
 
   async function checkSession() {
@@ -1095,8 +1104,13 @@
       if (res.ok) {
         loginOverlay.hidden = true;
         accessInput.value = "";
-        input.focus();
         updateOwnerUi(data && data.role, true);
+        const next = nextPath();
+        if (next) {
+          location.href = next;
+          return;
+        }
+        input.focus();
       } else {
         showLogin((data && data.error) || "Wrong access code.");
       }
@@ -1105,6 +1119,10 @@
     } finally {
       loginSubmit.disabled = false;
     }
+  });
+
+  adminBtn.addEventListener("click", () => {
+    location.href = "/admin";
   });
 
   codeBtn.addEventListener("click", async () => {

@@ -22,17 +22,21 @@ import base64
 import binascii
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import threading
 import time
+import urllib.error
+import urllib.request
+import uuid
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, jsonify, redirect, request, send_from_directory, session
 from openai import OpenAI, RateLimitError
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -153,6 +157,191 @@ def check_guest_code(code: str) -> int | None:
     if time.time() >= expires:
         return -1
     return expires
+
+
+# --- Revocable access keys ---------------------------------------------------
+# Keys are stored as keyed SHA-256 hashes, so the store can live in a public
+# repo without exposing the codes. Storage backend is the GitHub Contents API
+# when PIOU_KEYS_TOKEN is set, otherwise a local keys.json file.
+#
+# PIOU_KEYS_BRANCH keeps the store on a branch nobody deploys from, so adding
+# or stopping a key does not trigger a new Render deployment.
+
+KEYS_REPO = os.environ.get("PIOU_KEYS_REPO", "Jasonslayer123/piou-ai").strip()
+KEYS_PATH = os.environ.get("PIOU_KEYS_PATH", "keys.json").strip()
+KEYS_TOKEN = os.environ.get("PIOU_KEYS_TOKEN", "").strip()
+KEYS_BRANCH = os.environ.get("PIOU_KEYS_BRANCH", "").strip()
+KEYS_MAIN = os.environ.get("PIOU_KEYS_MAIN", "main").strip()
+KEYS_FILE = BASE_DIR / "keys.json"
+GH_API = "https://api.github.com"
+
+_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_key_cache: dict = {"ts": 0.0, "keys": [], "sha": None}
+_key_lock = threading.Lock()
+
+
+def hash_key(code: str) -> str:
+    return hmac.new(
+        SECRET_KEY.encode(), f"key:{code.strip().upper()}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def new_key_code() -> str:
+    raw = "".join(secrets.choice(_KEY_ALPHABET) for _ in range(8))
+    return f"PIOU-{raw[:4]}-{raw[4:]}"
+
+
+def _gh_call(method: str, url: str, payload: dict | None = None) -> dict:
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"Bearer {KEYS_TOKEN}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    if data:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise FileNotFoundError from exc
+        raise
+
+
+def _keys_target_ref() -> str:
+    return KEYS_BRANCH or KEYS_MAIN
+
+
+def _keys_url(ref: str | None = None) -> str:
+    url = f"{GH_API}/repos/{KEYS_REPO}/contents/{KEYS_PATH}"
+    if ref:
+        url += f"?ref={ref}"
+    return url
+
+
+def _read_keys_remote(ref: str) -> tuple[list, str | None]:
+    data = _gh_call("GET", _keys_url(ref))
+    raw = base64.b64decode(data.get("content", "") or "").decode() or "{}"
+    return list(json.loads(raw).get("keys", [])), data.get("sha")
+
+
+def _ensure_keys_branch() -> None:
+    """Create the storage branch from main the first time it is needed."""
+    if not KEYS_BRANCH:
+        return
+    try:
+        _gh_call("GET", f"{GH_API}/repos/{KEYS_REPO}/git/ref/heads/{KEYS_BRANCH}")
+        return
+    except FileNotFoundError:
+        pass
+
+    try:
+        head = _gh_call(
+            "GET", f"{GH_API}/repos/{KEYS_REPO}/git/ref/heads/{KEYS_MAIN}"
+        )
+    except FileNotFoundError:
+        return
+    sha = (head.get("object") or {}).get("sha")
+    if not sha:
+        return
+    try:
+        _gh_call(
+            "POST",
+            f"{GH_API}/repos/{KEYS_REPO}/git/refs",
+            {"ref": f"refs/heads/{KEYS_BRANCH}", "sha": sha},
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (409, 422):
+            raise
+
+
+def load_keys(force: bool = False) -> tuple[list, str | None]:
+    with _key_lock:
+        if not force and time.time() - _key_cache["ts"] < 10:
+            return _key_cache["keys"], _key_cache["sha"]
+
+        keys: list = []
+        sha: str | None = None
+        if KEYS_TOKEN:
+            refs = [_keys_target_ref()]
+            if KEYS_BRANCH and KEYS_MAIN not in refs:
+                refs.append(KEYS_MAIN)
+            for ref in refs:
+                try:
+                    keys, sha = _read_keys_remote(ref)
+                    break
+                except FileNotFoundError:
+                    keys, sha = [], None
+                except Exception as exc:  # network, revoked token, rate limit...
+                    print(f"WARNING: could not read keys from GitHub: {exc}")
+                    keys, sha = [], None
+                    break
+        elif KEYS_FILE.exists():
+            try:
+                keys = json.loads(KEYS_FILE.read_text(encoding="utf-8")).get(
+                    "keys", []
+                )
+            except (ValueError, OSError):
+                keys = []
+
+        _key_cache.update(ts=time.time(), keys=keys, sha=sha)
+        return keys, sha
+
+
+def save_keys(keys: list, sha: str | None, message: str) -> None:
+    text = json.dumps({"keys": keys}, indent=2)
+    with _key_lock:
+        if KEYS_TOKEN:
+            _ensure_keys_branch()
+            ref = _keys_target_ref()
+            # Read the target branch's current blob sha so a stale cache can
+            # never produce a 409 conflict.
+            current = None
+            try:
+                _, current = _read_keys_remote(ref)
+            except FileNotFoundError:
+                current = None
+
+            payload = {
+                "message": message,
+                "content": base64.b64encode(text.encode()).decode(),
+                "branch": ref,
+            }
+            if current:
+                payload["sha"] = current
+            data = _gh_call("PUT", _keys_url(), payload)
+            sha = (data.get("content") or {}).get("sha", current)
+        else:
+            KEYS_FILE.write_text(text, encoding="utf-8")
+            sha = None
+        _key_cache.update(ts=time.time(), keys=keys, sha=sha)
+
+
+def find_key(code: str) -> dict | None:
+    hashed = hash_key(code)
+    keys, _ = load_keys()
+    for entry in keys:
+        if hmac.compare_digest(entry.get("hash", ""), hashed):
+            return entry
+    return None
+
+
+def key_state(entry: dict) -> str:
+    if not entry.get("active", True):
+        return "stopped"
+    expires = entry.get("expires_at")
+    if expires and time.time() >= float(expires):
+        return "expired"
+    return "active"
+
+
+def get_key_by_id(key_id: str) -> dict | None:
+    keys, _ = load_keys()
+    for entry in keys:
+        if entry.get("id") == key_id:
+            return entry
+    return None
+
 
 
 SYSTEM_PROMPT = """You are PIOU AI, a friendly, sharp, general-purpose AI assistant.
@@ -347,12 +536,28 @@ def _is_authorized() -> bool:
     """Open locally when no access code is configured."""
     if not ACCESS_CODE:
         return True
-    if session.get("authorized") is True:
-        return True
+    if session.get("authorized") is not True:
+        return False
+
+    # Keys are revocable, so a key-based session is re-checked on every request.
+    key_id = session.get("key_id")
+    if key_id:
+        try:
+            entry = get_key_by_id(key_id)
+        except Exception:
+            entry = None
+        return bool(entry) and key_state(entry) == "active"
+
     guest_until = session.get("guest_until")
-    if isinstance(guest_until, (int, float)) and time.time() < float(guest_until):
-        return True
-    return False
+    if isinstance(guest_until, (int, float)) and time.time() >= float(guest_until):
+        return False
+    return True
+
+
+def _is_owner() -> bool:
+    if not _is_authorized():
+        return False
+    return (session.get("role") or ("owner" if not ACCESS_CODE else None)) == "owner"
 
 
 def _clean_history(raw) -> list[dict]:
@@ -671,6 +876,32 @@ def login():
             }
         )
 
+    try:
+        entry = find_key(code)
+    except Exception:
+        entry = None
+    if entry:
+        state = key_state(entry)
+        if state == "stopped":
+            return _error("That code has been stopped.", 401)
+        if state == "expired":
+            return _error("That code has expired.", 401)
+        session.permanent = True
+        session["authorized"] = True
+        session["role"] = "guest"
+        session["key_id"] = entry["id"]
+        expires = entry.get("expires_at")
+        if expires:
+            session["guest_until"] = float(expires)
+        return jsonify(
+            {
+                "ok": True,
+                "required": True,
+                "role": "guest",
+                "expires_at": expires,
+            }
+        )
+
     return _error("Wrong access code.", 401)
 
 
@@ -702,6 +933,125 @@ def create_guest_code():
 def logout():
     session.clear()
     return jsonify({"ok": True})
+
+
+@app.route("/admin")
+def admin_page():
+    """Owner-only admin panel."""
+    if not _is_authorized():
+        return redirect("/?next=/admin")
+    if not _is_owner():
+        return redirect("/")
+    return send_from_directory(BASE_DIR, "admin.html")
+
+
+@app.route("/api/admin/keys", methods=["GET"])
+def admin_list_keys():
+    if not _is_owner():
+        return _error("Owner code required.", 403)
+
+    try:
+        keys, _ = load_keys(force=True)
+    except Exception as exc:
+        return _error(f"Could not load keys: {exc}", 502)
+
+    out = []
+    for entry in keys:
+        out.append(
+            {
+                "id": entry.get("id"),
+                "label": entry.get("label", ""),
+                "created_at": entry.get("created_at"),
+                "expires_at": entry.get("expires_at"),
+                "state": key_state(entry),
+            }
+        )
+    out.sort(key=lambda e: e.get("created_at") or 0, reverse=True)
+    return jsonify({"keys": out, "storage": "github" if KEYS_TOKEN else "local"})
+
+
+@app.route("/api/admin/keys", methods=["POST"])
+def admin_create_key():
+    if not _is_owner():
+        return _error("Owner code required.", 403)
+
+    payload = request.get_json(silent=True)
+    label = ""
+    minutes = 0
+    if isinstance(payload, dict):
+        label = str(payload.get("label", "")).strip()[:60]
+        try:
+            minutes = int(payload.get("minutes", 0) or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+    minutes = max(0, min(minutes, 60 * 24 * 365))
+
+    code = new_key_code()
+    now = time.time()
+    entry = {
+        "id": uuid.uuid4().hex[:12],
+        "label": label or "Guest key",
+        "hash": hash_key(code),
+        "created_at": now,
+        "expires_at": now + minutes * 60 if minutes else None,
+        "active": True,
+    }
+
+    try:
+        keys, sha = load_keys(force=True)
+        keys.append(entry)
+        save_keys(keys, sha, f"Add access key: {entry['label']}")
+    except Exception as exc:
+        return _error(f"Could not save the key: {exc}", 502)
+
+    return jsonify(
+        {
+            "key": {
+                "id": entry["id"],
+                "label": entry["label"],
+                "created_at": entry["created_at"],
+                "expires_at": entry["expires_at"],
+                "state": "active",
+            },
+            "code": code,
+        }
+    )
+
+
+@app.route("/api/admin/keys/<key_id>/revoke", methods=["POST"])
+def admin_revoke_key(key_id: str):
+    if not _is_owner():
+        return _error("Owner code required.", 403)
+
+    try:
+        keys, sha = load_keys(force=True)
+        entry = next((k for k in keys if k.get("id") == key_id), None)
+        if not entry:
+            return _error("That key does not exist.", 404)
+        entry["active"] = False
+        entry["stopped_at"] = time.time()
+        save_keys(keys, sha, f"Stop access key: {entry.get('label', key_id)}")
+    except Exception as exc:
+        return _error(f"Could not stop the key: {exc}", 502)
+
+    return jsonify({"ok": True, "id": key_id})
+
+
+@app.route("/api/admin/keys/<key_id>", methods=["DELETE"])
+def admin_delete_key(key_id: str):
+    if not _is_owner():
+        return _error("Owner code required.", 403)
+
+    try:
+        keys, sha = load_keys(force=True)
+        remaining = [k for k in keys if k.get("id") != key_id]
+        if len(remaining) == len(keys):
+            return _error("That key does not exist.", 404)
+        save_keys(keys=remaining, sha=sha, message="Delete access key")
+    except Exception as exc:
+        return _error(f"Could not delete the key: {exc}", 502)
+
+    return jsonify({"ok": True, "id": key_id})
 
 
 @app.route("/api/chat", methods=["POST"])

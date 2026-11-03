@@ -16,6 +16,12 @@ services:
         sync: false
       - key: PIOU_ACCESS_CODE
         sync: false
+      - key: PIOU_KEYS_TOKEN
+        sync: false
+      - key: PIOU_KEYS_REPO
+        value: Jasonslayer123/piou-ai
+      - key: PIOU_KEYS_BRANCH
+        value: piou-state
       - key: SECRET_KEY
         generateValue: true
       - key: PIOU_BEHIND_PROXY
