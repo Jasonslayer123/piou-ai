@@ -129,6 +129,17 @@
 
   .ghost-btn:hover { color: var(--text); border-color: #3a4c70; }
 
+  .danger-btn {
+    border-color: rgba(255, 123, 138, 0.4);
+    color: var(--danger);
+  }
+
+  .danger-btn:hover {
+    background: rgba(255, 123, 138, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
   #chat-box {
     flex: 1;
     min-height: 320px;
@@ -497,21 +508,6 @@
     color: var(--text);
   }
 
-  .admin-row {
-    display: flex;
-    gap: 10px;
-  }
-
-  .admin-keys-box {
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    background: var(--panel-2);
-    font-size: 0.85rem;
-  }
-
   @media (max-width: 560px) {
     body { padding: 18px 10px; }
     #chat-box { padding: 16px; max-height: calc(100vh - 300px); }
@@ -532,10 +528,11 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
-      <!-- In-Page Popup Admin GUI Button -->
+      <!-- Admin GUI & Log out buttons -->
       <button class="ghost-btn" id="admin-btn" type="button" style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
+      <button class="ghost-btn danger-btn" id="logout-btn" type="button">Log out</button>
     </div>
   </div>
 
@@ -583,6 +580,7 @@
         <option value="360">6 hours</option>
         <option value="1440">1 day</option>
         <option value="10080" selected>7 days</option>
+        <option value="43200">30 days</option>
         <option value="0">Never expires</option>
       </select>
       <button type="submit" style="margin-top: 4px;">Create Key</button>
@@ -634,6 +632,7 @@
   const input = document.getElementById("prompt-input");
   const sendBtn = document.getElementById("send-btn");
   const clearBtn = document.getElementById("clear-btn");
+  const logoutBtn = document.getElementById("logout-btn");
   const attachBtn = document.getElementById("attach-btn");
   const fileInput = document.getElementById("file-input");
   const attachments = document.getElementById("attachments");
@@ -746,7 +745,7 @@
     return div;
   }
 
-  // Event Listeners for direct in-page Admin GUI popup
+  // Admin Overlay Event Listeners
   adminBtn.addEventListener("click", () => {
     adminOverlay.hidden = false;
     adminKeyResult.style.display = "none";
@@ -778,6 +777,14 @@
     } catch (_) {
       alert("Could not connect to server.");
     }
+  });
+
+  // Log Out Handler
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (_) {}
+    location.reload();
   });
 
   function readAsDataUrl(file) {
