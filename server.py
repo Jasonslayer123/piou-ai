@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import hmac
 import os
 import secrets
@@ -103,6 +104,56 @@ if not SECRET_KEY:
         "WARNING: SECRET_KEY is not set; using an ephemeral key. "
         "Sessions will reset on restart and will not work across workers."
     )
+
+
+# --- Self-service guest codes ------------------------------------------------
+# The owner can mint a time-limited code from the UI. The code encodes its own
+# expiry and is signed with SECRET_KEY, so it keeps working across restarts and
+# needs no database.
+
+_B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def _to_base36(value: int) -> str:
+    if value <= 0:
+        return "0"
+    out = ""
+    while value:
+        value, rem = divmod(value, 36)
+        out = _B36[rem] + out
+    return out
+
+
+def _guest_signature(payload: str) -> str:
+    return hmac.new(
+        SECRET_KEY.encode(), f"guest:{payload}".encode(), hashlib.sha256
+    ).hexdigest()[:6]
+
+
+def make_guest_code(minutes: int) -> tuple[str, int]:
+    expires = int(time.time()) + minutes * 60
+    payload = _to_base36(expires)
+    return f"piou-{payload}{_guest_signature(payload)}", expires
+
+
+def check_guest_code(code: str) -> int | None:
+    """Return the expiry timestamp, -1 if expired, or None if invalid."""
+    if not code.lower().startswith("piou-"):
+        return None
+    body = code[5:].lower()
+    if len(body) < 6:
+        return None
+    payload, signature = body[:-6], body[-6:]
+    if not hmac.compare_digest(signature, _guest_signature(payload)):
+        return None
+    try:
+        expires = int(payload, 36)
+    except ValueError:
+        return None
+    if time.time() >= expires:
+        return -1
+    return expires
+
 
 SYSTEM_PROMPT = """You are PIOU AI, a friendly, sharp, general-purpose AI assistant.
 
@@ -534,12 +585,18 @@ def session_status():
     guest_active = isinstance(guest_until, (int, float)) and time.time() < float(
         guest_until
     )
+    authorized = _is_authorized()
     return jsonify(
         {
             "required": bool(ACCESS_CODE),
-            "authenticated": _is_authorized(),
+            "authenticated": authorized,
             "guest": guest_active,
             "guest_expires_at": int(guest_until) if guest_active else None,
+            "role": (
+                session.get("role") or ("owner" if not ACCESS_CODE else None)
+                if authorized
+                else None
+            ),
         }
     )
 
@@ -574,9 +631,10 @@ def login():
 
     code = code.strip()
 
-    if hmac.compare_digest(code, ACCESS_CODE):
+    if ACCESS_CODE and hmac.compare_digest(code, ACCESS_CODE):
         session.permanent = True
         session["authorized"] = True
+        session["role"] = "owner"
         session.pop("guest_until", None)
         return jsonify({"ok": True, "required": True, "role": "owner"})
 
@@ -584,6 +642,7 @@ def login():
         if GUEST_UNTIL and time.time() < GUEST_UNTIL:
             session.permanent = True
             session["authorized"] = True
+            session["role"] = "guest"
             session["guest_until"] = GUEST_UNTIL
             return jsonify(
                 {
@@ -595,7 +654,48 @@ def login():
             )
         return _error("That guest code has expired.", 401)
 
+    guest_expires = check_guest_code(code)
+    if guest_expires == -1:
+        return _error("That guest code has expired.", 401)
+    if guest_expires:
+        session.permanent = True
+        session["authorized"] = True
+        session["role"] = "guest"
+        session["guest_until"] = guest_expires
+        return jsonify(
+            {
+                "ok": True,
+                "required": True,
+                "role": "guest",
+                "expires_at": int(guest_expires),
+            }
+        )
+
     return _error("Wrong access code.", 401)
+
+
+@app.route("/api/guest-code", methods=["POST"])
+def create_guest_code():
+    """Owner-only: mint a signed guest code that expires after N minutes."""
+    if not _is_authorized():
+        return (
+            jsonify({"error": "Access code required.", "login_required": True}),
+            401,
+        )
+
+    role = session.get("role") or ("owner" if not ACCESS_CODE else None)
+    if role != "owner":
+        return _error("Only the owner code can create guest codes.", 403)
+
+    payload = request.get_json(silent=True)
+    try:
+        minutes = int(payload.get("minutes", 60)) if isinstance(payload, dict) else 60
+    except (TypeError, ValueError):
+        minutes = 60
+    minutes = max(1, min(minutes, 24 * 60))
+
+    code, expires = make_guest_code(minutes)
+    return jsonify({"code": code, "expires_at": expires, "minutes": minutes})
 
 
 @app.route("/api/logout", methods=["POST"])

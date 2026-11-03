@@ -101,6 +101,12 @@
     font-size: 0.72rem;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .status-dot {
     width: 8px;
     height: 8px;
@@ -419,7 +425,8 @@
     text-align: center;
   }
 
-  #login-overlay {
+  #login-overlay,
+  #code-overlay {
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -431,7 +438,8 @@
     backdrop-filter: blur(6px);
   }
 
-  #login-overlay[hidden] { display: none; }
+  #login-overlay[hidden],
+  #code-overlay[hidden] { display: none; }
 
   .login-card {
     width: min(380px, 100%);
@@ -495,6 +503,32 @@
     font-size: 0.85rem;
   }
 
+  .code-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.3rem;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding: 14px 12px;
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    background: var(--panel-2);
+    color: var(--accent);
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .code-meta {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .login-card button.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
   @media (max-width: 560px) {
     body { padding: 18px 10px; }
     #chat-box { padding: 16px; max-height: calc(100vh - 300px); }
@@ -514,7 +548,10 @@
 <main id="chat-shell">
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
-    <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
+    <div class="header-actions">
+      <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
+      <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
+    </div>
   </div>
 
   <div id="chat-box" aria-live="polite" aria-label="Conversation"></div>
@@ -564,6 +601,17 @@
   </form>
 </div>
 
+<div id="code-overlay" hidden>
+  <div class="login-card">
+    <h2>Guest code</h2>
+    <p>Send this to whoever you want to let in. It stops working at the time below.</p>
+    <div class="code-value" id="code-value">&mdash;</div>
+    <p class="code-meta" id="code-expiry"></p>
+    <button id="code-copy" type="button">Copy code</button>
+    <button id="code-close" class="secondary" type="button">Close</button>
+  </div>
+</div>
+
 <script>
 (() => {
   "use strict";
@@ -582,6 +630,12 @@
   const accessInput = document.getElementById("access-code");
   const loginError = document.getElementById("login-error");
   const loginSubmit = document.getElementById("login-submit");
+  const codeBtn = document.getElementById("code-btn");
+  const codeOverlay = document.getElementById("code-overlay");
+  const codeValue = document.getElementById("code-value");
+  const codeExpiry = document.getElementById("code-expiry");
+  const codeCopy = document.getElementById("code-copy");
+  const codeClose = document.getElementById("code-close");
 
   const GREETING =
     "Hi! I'm PIOU AI — ask me anything in English or Greek, " +
@@ -821,12 +875,18 @@
     accessInput.focus();
   }
 
+  function updateOwnerUi(role, required) {
+    // The guest-code button is only for the owner (or open local mode).
+    codeBtn.hidden = !(role === "owner" || required === false);
+  }
+
   async function checkSession() {
     try {
       const res = await fetch("/api/session");
       if (!res.ok) return;
       const data = await res.json();
       if (data.required && !data.authenticated) showLogin();
+      updateOwnerUi(data.role, data.required);
     } catch (_) {
       /* The chat request will show a connection error if the server is down. */
     }
@@ -1036,6 +1096,7 @@
         loginOverlay.hidden = true;
         accessInput.value = "";
         input.focus();
+        updateOwnerUi(data && data.role, true);
       } else {
         showLogin((data && data.error) || "Wrong access code.");
       }
@@ -1044,6 +1105,66 @@
     } finally {
       loginSubmit.disabled = false;
     }
+  });
+
+  codeBtn.addEventListener("click", async () => {
+    codeBtn.disabled = true;
+    try {
+      const res = await fetch("/api/guest-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minutes: 60 })
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = null;
+      }
+
+      if (res.ok && data && data.code) {
+        codeValue.textContent = data.code;
+        const when = new Date(data.expires_at * 1000);
+        codeExpiry.textContent =
+          "Expires " +
+          when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
+          " (" +
+          Math.round((data.expires_at * 1000 - Date.now()) / 60000) +
+          " min)";
+        codeOverlay.hidden = false;
+      } else {
+        addMessage(
+          (data && data.error) || "Could not create a guest code.",
+          "ai-message",
+          "error-message"
+        );
+      }
+    } catch (_) {
+      addMessage("Could not reach the server.", "ai-message", "error-message");
+    } finally {
+      codeBtn.disabled = false;
+    }
+  });
+
+  codeCopy.addEventListener("click", async () => {
+    const text = codeValue.textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      codeCopy.textContent = "Copied";
+      setTimeout(() => {
+        codeCopy.textContent = "Copy code";
+      }, 1200);
+    } catch (_) {
+      const range = document.createRange();
+      range.selectNodeContents(codeValue);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
+  codeClose.addEventListener("click", () => {
+    codeOverlay.hidden = true;
   });
 
   form.addEventListener("submit", (event) => {
