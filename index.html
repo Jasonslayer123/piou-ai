@@ -128,6 +128,7 @@
   }
 
   .ghost-btn:hover { color: var(--text); border-color: #3a4c70; }
+  .ghost-btn[hidden] { display: none; }
 
   .danger-btn {
     border-color: rgba(255, 123, 138, 0.4);
@@ -515,7 +516,8 @@
   <div id="chat-header">
     <span class="status"><span class="status-dot"></span>PIOU AI &middot; Gemini &middot; EN / EL</span>
     <div class="header-actions">
-      <button class="ghost-btn" id="admin-btn" type="button" style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
+      <!-- Hidden by default, only shown if logged in as owner -->
+      <button class="ghost-btn" id="admin-btn" type="button" hidden style="background: linear-gradient(135deg, #5aa9ff, #8b7bff); color: #06101f; font-weight: 700;">⚙️ Admin GUI</button>
       <button class="ghost-btn" id="code-btn" type="button" hidden>New 1-hour code</button>
       <button class="ghost-btn" id="clear-btn" type="button">Clear chat</button>
       <button class="ghost-btn danger-btn" id="logout-btn" type="button">Log out</button>
@@ -929,8 +931,10 @@
   }
 
   function updateOwnerUi(role, required) {
-    const owner = role === "owner" || required === false;
-    codeBtn.hidden = !owner;
+    const isOwner = role === "owner" || required === false;
+    // Only show Admin and Guest code buttons if the user is verified as the owner!
+    adminBtn.hidden = !isOwner;
+    codeBtn.hidden = !isOwner;
   }
 
   async function checkSession() {
@@ -1054,6 +1058,7 @@
         accessInput.value = "";
         updateOwnerUi(data && data.role, true);
         input.focus();
+        location.reload(); // Refresh session permissions cleanly
       } else {
         showLogin((data && data.error) || "Wrong access code.");
       }
