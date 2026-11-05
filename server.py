@@ -407,7 +407,7 @@ Be factual, specific, and complete. Never invent details."""
 app = Flask(__name__, static_folder=None)
 app.secret_key = SECRET_KEY
 app.config.update(
-    MAX_CONTENT_LENGTH=20 * 1024 * 1024,  # image upload limit
+    MAX_CONTENT_LENGTH=35 * 1024 * 1024,  # file upload limit
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("PIOU_COOKIE_SECURE") == "1",
@@ -442,12 +442,16 @@ gemini_client = (
 
 MAX_MESSAGE_CHARS = 8000
 MAX_HISTORY_MESSAGES = 20
-MAX_IMAGES = 9
+MAX_FILES = 9
 VISION_BATCH_SIZE = 3
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024
+MAX_FILE_BYTES = 10 * 1024 * 1024
+MAX_TOTAL_FILE_BYTES = 25 * 1024 * 1024
 
-ALLOWED_IMAGE_TYPES = {"png", "jpeg", "webp", "gif"}
+ALLOWED_FILE_TYPES = {
+    "png", "jpeg", "webp", "gif",
+    "pdf", "txt", "md", "csv", "json",
+    "py", "cpp", "h", "html", "css", "js"
+}
 
 
 def _error(message: str, status: int):
@@ -571,79 +575,81 @@ def _clean_history(raw) -> list[dict]:
         if not content:
             continue
 
-        images = _parse_images(item.get("images")) if role == "user" else []
+        files = _parse_files(item.get("images")) if role == "user" else []
         cleaned.append(
             {
                 "role": role,
                 "content": content[:MAX_MESSAGE_CHARS],
-                "images": images,
+                "images": files,
             }
         )
     return cleaned
 
 
-def _parse_images(raw) -> list[str]:
+def _parse_files(raw) -> list[str]:
+    """Validate base64 file data URLs and return normalised list."""
     if raw is None:
         return []
     if not isinstance(raw, list):
-        raise ValueError("Field 'images' must be a list of data URLs.")
-    if len(raw) > MAX_IMAGES:
-        raise ValueError(f"At most {MAX_IMAGES} images per message.")
+        raise ValueError("Field 'images' must be a list of file data URLs.")
+    if len(raw) > MAX_FILES:
+        raise ValueError(f"At most {MAX_FILES} files per message.")
 
     parsed: list[str] = []
     total_bytes = 0
     for index, item in enumerate(raw, start=1):
         if not isinstance(item, str) or not item.strip():
-            raise ValueError(f"Image {index} must be a base64 data URL.")
+            raise ValueError(f"File {index} must be a base64 data URL.")
 
         header, separator, encoded = item.strip().partition(",")
         if (
             not separator
-            or not header.startswith("data:image/")
+            or not header.startswith("data:")
             or ";base64" not in header
         ):
-            raise ValueError(f"Image {index} must be a base64 image data URL.")
+            raise ValueError(f"File {index} must be a valid base64 data URL.")
 
-        image_type = header[len("data:image/") :].split(";", 1)[0].lower()
-        if image_type == "jpg":
-            image_type = "jpeg"
-        if image_type not in ALLOWED_IMAGE_TYPES:
-            allowed = ", ".join(sorted(ALLOWED_IMAGE_TYPES))
-            raise ValueError(
-                f"Image {index} has an unsupported format (allowed: {allowed})."
-            )
+        mime_part = header[5:].split(";", 1)[0].lower()
+        file_ext = mime_part.split("/")[-1]
+        if file_ext == "jpg":
+            file_ext = "jpeg"
+
+        if file_ext not in ALLOWED_FILE_TYPES and not mime_part.startswith("text/"):
+            allowed = ", ".join(sorted(ALLOWED_FILE_TYPES))
+            raise ValueError(f"File {index} has an unsupported format (allowed: {allowed}).")
 
         encoded = "".join(encoded.split())
         try:
             blob = base64.b64decode(encoded, validate=True)
         except (binascii.Error, ValueError):
-            raise ValueError(f"Image {index} contains invalid base64 data.") from None
+            raise ValueError(f"File {index} contains invalid base64 data.") from None
 
         if not blob:
-            raise ValueError(f"Image {index} is empty.")
-        if len(blob) > MAX_IMAGE_BYTES:
-            raise ValueError(f"Image {index} is too large (maximum 5 MB).")
+            raise ValueError(f"File {index} is empty.")
+        if len(blob) > MAX_FILE_BYTES:
+            raise ValueError(f"File {index} is too large (maximum 10 MB).")
 
         total_bytes += len(blob)
-        if total_bytes > MAX_TOTAL_IMAGE_BYTES:
-            raise ValueError(
-                "The attached images are too large together (maximum 12 MB)."
-            )
+        if total_bytes > MAX_TOTAL_FILE_BYTES:
+            raise ValueError("The attached files are too large together (maximum 25 MB).")
 
         normalised = base64.b64encode(blob).decode("ascii")
-        parsed.append(f"data:image/{image_type};base64,{normalised}")
+        parsed.append(f"data:{mime_part};base64,{normalised}")
 
     return parsed
 
 
-def _image_content(text: str, images: list[str]):
-    if not images:
+def _image_content(text: str, files: list[str]):
+    if not files:
         return text
 
     content = [{"type": "text", "text": text}]
-    content.extend(
-        {"type": "image_url", "image_url": {"url": url}} for url in images
-    )
+    for url in files:
+        if url.startswith("data:image/"):
+            content.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            # For documents/text/code files, include them as document/text context data URLs
+            content.append({"type": "image_url", "image_url": {"url": url}})
     return content
 
 
@@ -680,9 +686,9 @@ def _answer_many_images(
     def analyse(job: tuple[int, str]) -> str:
         index, url = job
         image_prompt = (
-            f"Image {index + 1} of {total}.\n\n"
+            f"File {index + 1} of {total}.\n\n"
             f"User request:\n{prompt}\n\n"
-            "Analyse this image with that request in mind."
+            "Analyse this file/image with that request in mind."
         )
         analysis = _complete(
             groq_client,
@@ -695,15 +701,15 @@ def _answer_many_images(
             max_tokens=700,
             reasoning_effort="none",
         )
-        return f"### Image {index + 1}\n{analysis or '(No analysis returned.)'}"
+        return f"### File {index + 1}\n{analysis or '(No analysis returned.)'}"
 
     with ThreadPoolExecutor(max_workers=min(4, total)) as pool:
         analyses = list(pool.map(analyse, enumerate(images)))
 
     synthesis = (
-        f"The user attached {total} images. Each one was analysed separately:\n\n"
+        f"The user attached {total} files. Each one was analysed separately:\n\n"
         + "\n\n".join(analyses)
-        + "\n\nNow answer the user's original request. Refer to images by their "
+        + "\n\nNow answer the user's original request. Refer to files by their "
         "numbers. If something could not be read, say so instead of guessing. "
         "Do not mention the analysis process."
     )
@@ -1069,16 +1075,16 @@ def chat():
     prompt = prompt.strip()
 
     try:
-        images = _parse_images(payload.get("images"))
+        files = _parse_files(payload.get("images"))
         history = _clean_history(payload.get("history"))
     except ValueError as exc:
         return _error(str(exc), 400)
 
-    if not prompt and not images:
-        return _error("Send a prompt and/or at least one image.", 400)
+    if not prompt and not files:
+        return _error("Send a prompt and/or at least one file.", 400)
     if not prompt:
         prompt = (
-            "Describe the image or images in detail. "
+            "Describe the file or files in detail. "
             "Transcribe any visible text exactly."
         )
     if len(prompt) > MAX_MESSAGE_CHARS:
@@ -1086,12 +1092,12 @@ def chat():
             f"Prompt is too long (maximum {MAX_MESSAGE_CHARS} characters).", 400
         )
 
-    history_images = sum(len(turn["images"]) for turn in history)
-    total_images = history_images + len(images)
-    if total_images > MAX_IMAGES:
+    history_files = sum(len(turn["images"]) for turn in history)
+    total_files = history_files + len(files)
+    if total_files > MAX_FILES:
         return _error(
-            f"At most {MAX_IMAGES} images can be sent in one request, including "
-            "images carried over from earlier turns.",
+            f"At most {MAX_FILES} files can be sent in one request, including "
+            "files carried over from earlier turns.",
             400,
         )
 
@@ -1102,7 +1108,7 @@ def chat():
             503,
         )
 
-    cost = 1 + 2 * total_images
+    cost = 1 + 2 * total_files
     allowed, retry_after, limit_kind = _rate_limit("chat", cost=cost)
     if not allowed:
         if limit_kind == "day":
@@ -1143,8 +1149,8 @@ def chat():
     gemini_error = None
 
     if gemini_client:
-        has_images = total_images > 0
-        if has_images:
+        has_files = total_files > 0
+        if has_files:
             gemini_models = [GEMINI_VISION_MODEL, GEMINI_VISION_FALLBACK]
         else:
             gemini_models = [GEMINI_TEXT_MODEL, GEMINI_TEXT_FALLBACK]
@@ -1157,8 +1163,8 @@ def chat():
                     model,
                     prompt,
                     history_messages,
-                    images,
-                    has_images=has_images,
+                    files,
+                    has_images=has_files,
                 )
             except Exception as exc:
                 gemini_error = exc
@@ -1171,23 +1177,23 @@ def chat():
 
     if not answer and groq_client:
         try:
-            if total_images > VISION_BATCH_SIZE:
-                all_images = [
+            if total_files > VISION_BATCH_SIZE:
+                all_files = [
                     url for turn in history for url in turn["images"]
-                ] + images
+                ] + files
                 answer = _answer_many_images(
-                    prompt, history_text_messages, all_images
+                    prompt, history_text_messages, all_files
                 )
                 groq_model = "batched-vision"
             else:
-                groq_model = VISION_MODEL if total_images else TEXT_MODEL
+                groq_model = VISION_MODEL if total_files else TEXT_MODEL
                 answer = _complete(
                     groq_client,
                     groq_model,
                     [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         *history_messages,
-                        {"role": "user", "content": _image_content(prompt, images)},
+                        {"role": "user", "content": _image_content(prompt, files)},
                     ],
                     reasoning_effort=(
                         "none" if groq_model == VISION_MODEL else None
