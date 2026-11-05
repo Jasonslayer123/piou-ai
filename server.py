@@ -733,7 +733,7 @@ def _ask_gemini(
     *,
     has_images: bool,
 ) -> str:
-    """One Gemini call with Google Search grounding explicitly enabled."""
+    """One Gemini call with Google Search and URL Context fetching enabled."""
     return _complete(
         gemini_client,
         model,
@@ -745,7 +745,12 @@ def _ask_gemini(
         temperature=0.6,
         max_tokens=2048 if has_images else 4096,
         reasoning_effort=None if "lite" in model else "low",
-        extra_body={"tools": [{"google_search": {}}]},
+        extra_body={
+            "tools": [
+                {"google_search": {}},
+                {"type": "url_context"}
+            ]
+        },
     )
 
 
